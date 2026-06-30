@@ -1,0 +1,409 @@
+// WB Shturval — database schema (PostgreSQL via Prisma)
+//
+// Design notes:
+// - Tenant key on every data table is `userId` (one user = one WB cabinet in v1,
+//   see DECISIONS.md D-0006). Foundation for multi-account = add accountId later.
+// - Money stored as Decimal(14,2). nmId stored as Int (WB nmIDs fit in int4 with
+//   wide margin; documented assumption). Raw WB rows kept for correctness/dedup;
+//   computed analytics materialized into ProductAnalytics for fast reads.
+// - Source of truth for FORMULAS is backend/src/domain (pure functions), NOT SQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Auth & profile
+// ──────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  companyName  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  wbKey          WbKey?
+  supplySettings SupplySettings?
+  products       Product[]
+  orders         OrderRow[]
+  sales          SaleRow[]
+  stockSnapshots StockSnapshot[]
+  financeRows    FinanceRow[]
+  adStats        AdStat[]
+  supplies       Supply[]
+  costs          ProductCost[]
+  productSettings ProductSettings[]
+  hiddenTasks    HiddenTask[]
+  syncRuns       SyncRun[]
+  analytics      ProductAnalytics[]
+
+  @@map("users")
+}
+
+// Encrypted Wildberries API key (AES-256-GCM). Plaintext never stored / never
+// sent to the frontend. See DECISIONS.md D-0003.
+model WbKey {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ciphertext    String // base64
+  iv            String // base64
+  authTag       String // base64
+  last4         String // masked tail for UI ("…aB3x")
+  categories    String? // free text / comma list of granted categories (optional)
+  isValid       Boolean   @default(true)
+  lastCheckedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("wb_keys")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Product master list
+// ──────────────────────────────────────────────────────────────────────────
+
+enum ProductSource {
+  CONTENT // learned from Content API cards
+  DERIVED // learned from orders/sales/stocks (no content token)
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId            Int
+  supplierArticle String
+  barcode         String?
+  category        String?
+  subject         String?
+  brand           String?
+  title           String?
+  photoUrl        String?
+  source          ProductSource @default(DERIVED)
+  archived        Boolean       @default(false)
+  archivedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([userId, nmId])
+  @@index([userId, archived])
+  @@index([userId, supplierArticle])
+  @@map("products")
+}
+
+// Cost of goods with history (effectiveFrom). Current cost = latest row with
+// effectiveFrom <= today. See spec 4.8 / 9.1.
+model ProductCost {
+  id                       String   @id @default(cuid())
+  userId                   String
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId                     Int
+  unitCost                 Decimal  @db.Decimal(14, 2)
+  purchaseCost             Decimal? @db.Decimal(14, 2)
+  inboundLogisticsCost     Decimal? @db.Decimal(14, 2)
+  packagingCost            Decimal? @db.Decimal(14, 2)
+  labelingCost             Decimal? @db.Decimal(14, 2)
+  customsCertificationCost Decimal? @db.Decimal(14, 2)
+  otherPreWbCost           Decimal? @db.Decimal(14, 2)
+  effectiveFrom            DateTime @default(now())
+  createdAt                DateTime @default(now())
+
+  @@index([userId, nmId, effectiveFrom])
+  @@map("product_costs")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Supply settings (global defaults + per-product overrides)
+// ──────────────────────────────────────────────────────────────────────────
+
+model SupplySettings {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leadTimeDays    Int      @default(14)
+  orderBufferDays Int      @default(7)
+  orderQuantum    Int      @default(1)
+  targetStockDays Int      @default(45)
+  taxPercent      Decimal  @default(0) @db.Decimal(6, 3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("supply_settings")
+}
+
+model ProductSettings {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId            Int
+  leadTimeDays    Int?
+  orderBufferDays Int?
+  orderQuantum    Int?
+  targetStockDays Int?
+  taxPercent      Decimal? @db.Decimal(6, 3)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, nmId])
+  @@map("product_settings")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Raw Wildberries data
+// ──────────────────────────────────────────────────────────────────────────
+
+model OrderRow {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  srid            String
+  nmId            Int
+  supplierArticle String
+  date            DateTime
+  lastChangeDate  DateTime
+  isCancel        Boolean  @default(false)
+  totalPrice      Decimal? @db.Decimal(14, 2)
+  discountPercent Decimal? @db.Decimal(6, 3)
+  finishedPrice   Decimal? @db.Decimal(14, 2)
+  priceWithDisc   Decimal? @db.Decimal(14, 2)
+  warehouseName   String?
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, srid])
+  @@index([userId, nmId, date])
+  @@index([userId, date])
+  @@map("order_rows")
+}
+
+model SaleRow {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  saleID          String
+  nmId            Int
+  supplierArticle String
+  date            DateTime
+  lastChangeDate  DateTime
+  isReturn        Boolean  @default(false) // saleID starts with "R"
+  forPay          Decimal? @db.Decimal(14, 2)
+  finishedPrice   Decimal? @db.Decimal(14, 2)
+  priceWithDisc   Decimal? @db.Decimal(14, 2)
+  totalPrice      Decimal? @db.Decimal(14, 2)
+  discountPercent Decimal? @db.Decimal(6, 3)
+  warehouseName   String?
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, saleID])
+  @@index([userId, nmId, date])
+  @@index([userId, date])
+  @@map("sale_rows")
+}
+
+// Daily snapshot of stock per nmId (aggregated across warehouses). WB has no
+// stock history — we build it ourselves. See spec 4.5 / 6.1, DECISIONS.md D-0006.
+model StockSnapshot {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId          Int
+  date          DateTime @db.Date
+  quantity      Int      @default(0) // available to sell, summed across warehouses
+  inWayToClient Int      @default(0)
+  quantityFull  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, nmId, date])
+  @@index([userId, date])
+  @@map("stock_snapshots")
+}
+
+// Raw financial report rows (reportDetailByPeriod). Deduped by rrdId. Weekly
+// aggregates computed in domain (no duplicate aggregate table — anti-duplication).
+model FinanceRow {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rrdId               BigInt
+  realizationReportId BigInt?
+  nmId                Int?
+  supplierArticle     String?
+  docTypeName         String?
+  quantity            Int       @default(0)
+  retailPrice         Decimal?  @db.Decimal(14, 2)
+  retailAmount        Decimal?  @db.Decimal(14, 2)
+  ppvzForPay          Decimal?  @db.Decimal(14, 2)
+  deliveryRub         Decimal?  @db.Decimal(14, 2)
+  storageFee          Decimal?  @db.Decimal(14, 2)
+  penalty             Decimal?  @db.Decimal(14, 2)
+  deduction           Decimal?  @db.Decimal(14, 2)
+  acceptance          Decimal?  @db.Decimal(14, 2)
+  returnAmount        Decimal?  @db.Decimal(14, 2)
+  commissionPercent   Decimal?  @db.Decimal(6, 3)
+  dateFrom            DateTime?
+  dateTo              DateTime?
+  saleDt              DateTime?
+  rrDt                DateTime?
+  createdAt           DateTime  @default(now())
+
+  @@unique([userId, rrdId])
+  @@index([userId, nmId, dateFrom])
+  @@index([userId, rrDt])
+  @@map("finance_rows")
+}
+
+enum AdSource {
+  PRECISE   // per-nmId spend reported by WB (adv/v3/fullstats)
+  ALLOCATED // distributed proportionally (estimate)
+}
+
+model AdStat {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId      Int
+  date      DateTime @db.Date
+  spend     Decimal  @default(0) @db.Decimal(14, 2)
+  views     Int      @default(0)
+  clicks    Int      @default(0)
+  orders    Int      @default(0)
+  source    AdSource @default(PRECISE)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, nmId, date, source])
+  @@index([userId, date])
+  @@map("ad_stats")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Manual supplies (in transit)
+// ──────────────────────────────────────────────────────────────────────────
+
+enum SupplyStatus {
+  IN_TRANSIT      // в пути
+  PARTIAL         // частично приехала
+  DELAYED         // задерживается
+  ZERO_NOT_FOUND  // остаток 0, поставка не обнаружена
+  WAIT_AFTER_ZERO // ждём после нуля
+  DELIVERED       // доставлена
+  CANCELLED       // отменена
+}
+
+model Supply {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId           Int
+  quantity       Int
+  acceptedQty    Int          @default(0)
+  expectedDate   DateTime     @db.Date
+  orderDate      DateTime     @default(now())
+  status         SupplyStatus @default(IN_TRANSIT)
+  watchAfterZero Boolean      @default(false)
+  // last observed stock for this nmId at the time supply tracking last ran,
+  // used to detect arrival increments (spec 8.2). Source of truth lives in
+  // domain/supply-tracking; this is just persisted state.
+  lastCheckedStock Int?
+  note           String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, nmId, status])
+  @@index([userId, status])
+  @@map("supplies")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Hidden reorder tasks & sync runs
+// ──────────────────────────────────────────────────────────────────────────
+
+model HiddenTask {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId      Int
+  hiddenAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@unique([userId, nmId])
+  @@map("hidden_tasks")
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  STALE_RESET
+}
+
+model SyncRun {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     SyncStatus @default(RUNNING)
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+  steps      Json? // per-source step status & counts
+  stats      Json? // summary counts (orders, sales, products, …)
+  error      String?
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, startedAt])
+  @@map("sync_runs")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Materialized per-product analytics (recomputed after sync / param changes)
+// ──────────────────────────────────────────────────────────────────────────
+
+enum SupplyHealth {
+  NO_STOCK
+  CRITICAL
+  ORDER
+  NORMAL
+  OVERSTOCK
+}
+
+enum DataQuality {
+  VERIFIED
+  VERIFIED_BUFFER
+  PARTIAL
+  NONE
+}
+
+model ProductAnalytics {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nmId           Int
+  currentStock   Int          @default(0)
+  inTransitQty   Int          @default(0)
+  v7             Decimal      @default(0) @db.Decimal(14, 4)
+  v14            Decimal      @default(0) @db.Decimal(14, 4)
+  v30            Decimal      @default(0) @db.Decimal(14, 4)
+  avgDailySales  Decimal      @default(0) @db.Decimal(14, 4)
+  daysOfStock    Decimal?     @db.Decimal(14, 2)
+  daysUntilOrder Int?
+  health         SupplyHealth @default(NORMAL)
+  recommendedQty Int          @default(0)
+  overstockQty   Int          @default(0)
+  deficitDate    DateTime?    @db.Date
+  revenue30      Decimal      @default(0) @db.Decimal(14, 2)
+  profit30       Decimal?     @db.Decimal(14, 2)
+  units30        Int          @default(0)
+  missedProfit30 Decimal      @default(0) @db.Decimal(14, 2)
+  dataQuality    DataQuality  @default(NONE)
+  computedAt     DateTime     @default(now())
+
+  @@unique([userId, nmId])
+  @@index([userId, health])
+  @@map("product_analytics")
+}

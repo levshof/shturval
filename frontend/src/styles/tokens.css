@@ -1,0 +1,80 @@
+/* WB Shturval — design tokens. Mirrors DESIGN_CODE.md one-to-one.
+   Light theme only. Do not hardcode colors/sizes in components — use these. */
+
+:root {
+  /* Neutrals */
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --border: #e3e8ee;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+
+  /* Brand */
+  --brand: #0e7c86;
+  --brand-hover: #0b656d;
+  --brand-active: #094e54;
+  --brand-soft: #e6f4f5;
+  --brand-ring: rgba(14, 124, 134, 0.2);
+
+  /* Semantic — strong (text/icon/border) */
+  --danger: #b42318;
+  --critical: #c4320a;
+  --warning: #b54708;
+  --success: #067647;
+  --info: #1d4ed8;
+  --neutral-strong: #475569;
+
+  /* Semantic — soft (badge backgrounds) */
+  --danger-soft: #feeceb;
+  --critical-soft: #fff1e8;
+  --warning-soft: #fef3e2;
+  --success-soft: #e7f6ee;
+  --info-soft: #e8effe;
+  --neutral-soft: #eef2f6;
+
+  /* Typography */
+  --font-ui: 'Inter', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-num: 'Inter', ui-monospace, 'SF Mono', monospace;
+
+  --fs-h1: 22px;
+  --fs-h2: 16px;
+  --fs-h3: 14px;
+  --fs-body: 14px;
+  --fs-dense: 13px;
+  --fs-caption: 12px;
+  --fs-metric: 26px;
+
+  /* Spacing scale (4px base) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* Radii */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-pop: 0 12px 32px rgba(15, 23, 42, 0.14);
+
+  /* Layout */
+  --sidebar-w: 240px;
+  --content-max: 1280px;
+
+  /* Breakpoints (for reference in JS/media queries) */
+  --bp-sm: 640px;
+  --bp-md: 960px;
+  --bp-lg: 1280px;
+}
