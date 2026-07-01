@@ -206,6 +206,15 @@ function ChartCard({ card }: { card: ProductCard }) {
   );
 }
 
+function Mini({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mini">
+      <div className="mini__label">{label}</div>
+      <div className="mini__value">{value}</div>
+    </div>
+  );
+}
+
 function EconomicsCard({ card }: { card: ProductCard }) {
   const e = card.economics;
   return (
@@ -214,29 +223,32 @@ function EconomicsCard({ card }: { card: ProductCard }) {
       actions={<StatusBadge view={dataQualityView(e.dataQuality)} dot={false} />}
     >
       {(!e.flags.hasCost || !e.flags.hasFinanceReport || !e.flags.hasAds) && (
-        <div className="stack" style={{ gap: 8, marginBottom: 12 }}>
+        <div className="stack" style={{ gap: 8, marginBottom: 16 }}>
           {!e.flags.hasCost && <Banner variant="warning" title="Не заполнена себестоимость">Прибыль не может быть рассчитана корректно.</Banner>}
           {!e.flags.hasFinanceReport && <Banner variant="warning">Нет финансового отчёта WB за период — выручка оценочная.</Banner>}
           {!e.flags.hasAds && <Banner variant="info">Нет данных по рекламе.</Banner>}
         </div>
       )}
-      <div className="grid grid-4">
-        <Metric label="Выручка" value={<span className="num">{formatMoney(e.revenue)}</span>} small />
+      <div className="grid grid-2" style={{ marginBottom: 16 }}>
+        <Metric label="Выручка" value={<span className="num">{formatMoney(e.revenue)}</span>} />
         <Metric
           label="Прибыль"
           value={<span className="num">{formatMoney(e.profit)}</span>}
+          sub={e.marginPercent != null ? `${formatPercent(e.marginPercent)} маржа` : undefined}
           trend={e.profit != null ? (e.profit >= 0 ? 'up' : 'down') : undefined}
-          small
         />
-        <Metric label="Продано" value={<span className="num">{formatUnits(e.units)}</span>} small />
-        <Metric label="Средняя цена" value={<span className="num">{formatMoney(e.avgPrice)}</span>} small />
-        <Metric label="Себестоимость" value={<span className="num">{formatMoney(e.cost)}</span>} small />
-        <Metric label="Расходы WB" value={<span className="num">{formatMoney(e.wbExpenses)}</span>} small />
-        <Metric label="Реклама" value={<span className="num">{formatMoney(e.adSpend)}</span>} small />
-        <Metric label="Налог" value={<span className="num">{formatMoney(e.tax)}</span>} small />
-        <Metric label="Прибыль/шт" value={<span className="num">{formatMoney(e.profitPerUnit)}</span>} small />
-        <Metric label="Маржа" value={<span className="num">{formatPercent(e.marginPercent)}</span>} small />
-        <Metric label="Доля расходов" value={<span className="num">{formatPercent(e.expensesSharePercent)}</span>} small />
+      </div>
+      <div className="mini-grid">
+        <Mini label="Себестоимость" value={formatMoney(e.cost)} />
+        <Mini label="Расходы WB" value={formatMoney(e.wbExpenses)} />
+        <Mini label="Реклама" value={formatMoney(e.adSpend)} />
+        <Mini label="Налог" value={formatMoney(e.tax)} />
+      </div>
+      <div className="mini-grid" style={{ marginTop: 8 }}>
+        <Mini label="Продано" value={formatUnits(e.units)} />
+        <Mini label="Средняя цена" value={formatMoney(e.avgPrice)} />
+        <Mini label="Прибыль/шт" value={formatMoney(e.profitPerUnit)} />
+        <Mini label="Доля расходов" value={formatPercent(e.expensesSharePercent)} />
       </div>
     </Card>
   );

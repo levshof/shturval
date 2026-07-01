@@ -7,6 +7,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 import type { BadgeVariant, StatusView } from '../../lib/status';
+import { Icon, type IconName } from './icons';
 
 // ── Button ──────────────────────────────────────────────────────────────────
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -32,6 +33,44 @@ export function Button({
       {...props}
     >
       {loading && <span className="spinner" />}
+      {children}
+    </button>
+  );
+}
+
+// ── Icon button / Chip ───────────────────────────────────────────────────────
+export function IconButton({
+  icon,
+  label,
+  onClick,
+  danger,
+  size = 17,
+  className = '',
+}: {
+  icon: IconName;
+  label: string;
+  onClick?: () => void;
+  danger?: boolean;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`icon-btn ${danger ? 'icon-btn--danger' : ''} ${className}`}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <Icon name={icon} size={size} />
+    </button>
+  );
+}
+
+export function Chip({ icon, onClick, children }: { icon?: IconName; onClick?: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className="chip" onClick={onClick}>
+      {icon && <Icon name={icon} size={15} />}
       {children}
     </button>
   );
@@ -175,7 +214,7 @@ export function Modal({
         <div className="modal__head">
           <h3 className="modal__title">{title}</h3>
           <button className="icon-btn" aria-label="Закрыть" onClick={onClose}>
-            ×
+            <Icon name="x" size={18} />
           </button>
         </div>
         <div className="modal__body">{children}</div>
@@ -212,7 +251,7 @@ export function EmptyState({
   title,
   description,
   action,
-  icon = '📦',
+  icon = <Icon name="box" size={30} />,
 }: {
   title: string;
   description?: ReactNode;
@@ -221,7 +260,7 @@ export function EmptyState({
 }) {
   return (
     <div className="empty">
-      <div style={{ fontSize: 28 }}>{icon}</div>
+      <div className="empty__icon">{icon}</div>
       <div className="empty__title">{title}</div>
       {description && <div className="muted" style={{ maxWidth: 420 }}>{description}</div>}
       {action}

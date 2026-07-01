@@ -3,41 +3,44 @@
 
 :root {
   /* Neutrals */
-  --bg: #f4f6f8;
+  --bg: #f3f5f8;
   --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --border: #e3e8ee;
-  --border-strong: #cbd5e1;
+  --surface-2: #f7f9fb;
+  --border: #e9edf1;
+  --border-strong: #d5dce4;
   --text: #0f172a;
   --text-2: #475569;
   --text-3: #94a3b8;
 
-  /* Brand */
-  --brand: #0e7c86;
-  --brand-hover: #0b656d;
-  --brand-active: #094e54;
-  --brand-soft: #e6f4f5;
-  --brand-ring: rgba(14, 124, 134, 0.2);
+  /* Brand — juicier teal */
+  --brand: #0a9aa8;
+  --brand-hover: #0b8492;
+  --brand-active: #076872;
+  --brand-soft: #e2f6f7;
+  --brand-soft-border: #c7ecef;
+  --brand-strong: #0e7c86;
+  --brand-ring: rgba(10, 154, 168, 0.22);
 
   /* Semantic — strong (text/icon/border) */
-  --danger: #b42318;
-  --critical: #c4320a;
-  --warning: #b54708;
-  --success: #067647;
+  --danger: #c02818;
+  --critical: #c2410c;
+  --warning: #b45309;
+  --success: #0f7a45;
   --info: #1d4ed8;
   --neutral-strong: #475569;
 
-  /* Semantic — soft (badge backgrounds) */
-  --danger-soft: #feeceb;
-  --critical-soft: #fff1e8;
-  --warning-soft: #fef3e2;
-  --success-soft: #e7f6ee;
+  /* Semantic — soft (badge / tint backgrounds) */
+  --danger-soft: #fdeae8;
+  --critical-soft: #fdece0;
+  --warning-soft: #fbeecf;
+  --success-soft: #e4f6ec;
   --info-soft: #e8effe;
   --neutral-soft: #eef2f6;
+  --pink-soft: #fdeef2;
 
   /* Typography */
   --font-ui: 'Inter', 'Segoe UI', Roboto, system-ui, sans-serif;
-  --font-num: 'Inter', ui-monospace, 'SF Mono', monospace;
+  --font-num: 'Roboto Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', monospace;
 
   --fs-h1: 22px;
   --fs-h2: 16px;

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { Button, Card, Field, Input } from '../components/ui';
+import { Icon } from '../components/ui/icons';
 import { ApiError } from '../lib/api';
 
 export function LoginPage() {
@@ -30,7 +31,9 @@ export function LoginPage() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="sidebar__logo">⎈</span>
+          <span className="sidebar__logo">
+            <Icon name="helm" size={18} />
+          </span>
           WB Shturval
         </div>
         <Card>

@@ -5,11 +5,12 @@ import { formatDays, formatMoney, formatNum } from '../lib/format';
 import { dataQualityView, healthView } from '../lib/status';
 import {
   Badge,
-  Banner,
   Button,
   Card,
+  Chip,
   EmptyState,
   Field,
+  IconButton,
   Input,
   LoadingBlock,
   Modal,
@@ -17,6 +18,7 @@ import {
   StatusBadge,
   Textarea,
 } from '../components/ui';
+import { Icon } from '../components/ui/icons';
 import { useToast } from '../components/ui/toast';
 import { ProductCardModal } from './ProductCardModal';
 
@@ -69,6 +71,7 @@ export function ProductsPage() {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('status');
   const [search, setSearch] = useState('');
+  const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [openNm, setOpenNm] = useState<number | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -79,10 +82,11 @@ export function ProductsPage() {
     placeholderData: keepPreviousData,
   });
 
-  const bulkArchive = useMutation({
-    mutationFn: (archived: boolean) => api.post('/api/products/bulk-archive', { nmIds: [...selected], archived }),
-    onSuccess: (_r, archived) => {
-      toast('success', archived ? 'Товары архивированы' : 'Товары возвращены из архива');
+  const archiveMut = useMutation({
+    mutationFn: (vars: { nmIds: number[]; archived: boolean }) =>
+      api.post('/api/products/bulk-archive', { nmIds: vars.nmIds, archived: vars.archived }),
+    onSuccess: (_r, vars) => {
+      toast('success', vars.archived ? 'Товары архивированы' : 'Товары возвращены из архива');
       setSelected(new Set());
       void qc.invalidateQueries({ queryKey: ['products'] });
       void qc.invalidateQueries({ queryKey: ['dashboard'] });
@@ -96,25 +100,18 @@ export function ProductsPage() {
   };
 
   const isArchive = filter === 'archive';
+  const items = data?.items ?? [];
+  const allSelected = items.length > 0 && items.every((p) => selected.has(p.nmId));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(items.map((p) => p.nmId)));
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
 
   return (
     <div className="stack">
-      {data && data.missingCostCount > 0 && (
-        <Banner
-          variant="warning"
-          title={`Себестоимость не заполнена: ${data.missingCostCount}`}
-          action={
-            <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
-              Импортировать себестоимость
-            </Button>
-          }
-        >
-          Без себестоимости прибыль считается неполно.
-        </Banner>
-      )}
-
       <Card pad="sm">
-        <div className="row between" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <div className="row between wrap">
           <div className="tabs">
             {FILTERS.map((f) => (
               <button key={f.key} className={`tab ${filter === f.key ? 'active' : ''}`} onClick={() => setFilter(f.key)}>
@@ -123,25 +120,42 @@ export function ProductsPage() {
               </button>
             ))}
           </div>
+          {data && data.missingCostCount > 0 && (
+            <Chip icon="tag" onClick={() => setImportOpen(true)}>
+              Себест. <span className="chip__count">{data.missingCostCount}</span>
+            </Chip>
+          )}
+        </div>
+
+        <div className="row between wrap" style={{ marginTop: 12 }}>
+          <button className={`linkbtn ${selectMode ? 'active' : ''}`} onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}>
+            <Icon name="check-square" size={15} />
+            {selectMode ? 'Готово' : 'Выбрать несколько'}
+          </button>
           <div className="row" style={{ gap: 8 }}>
             <Input placeholder="Поиск по артикулу" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 200 }} />
-            <Select value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: 180 }}>
+            <Select value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: 170 }}>
               {SORTS.map((s) => (
                 <option key={s.key} value={s.key}>
                   {s.label}
                 </option>
               ))}
             </Select>
-            <Button variant="secondary" onClick={() => setImportOpen(true)}>
+            <Button variant="ghost" onClick={() => setImportOpen(true)}>
               Импорт себест.
             </Button>
           </div>
         </div>
 
-        {selected.size > 0 && (
-          <div className="row between" style={{ marginTop: 12, padding: '8px 0' }}>
+        {selectMode && selected.size > 0 && (
+          <div className="row between" style={{ marginTop: 12 }}>
             <span className="muted">Выбрано: {selected.size}</span>
-            <Button size="sm" variant="secondary" onClick={() => bulkArchive.mutate(!isArchive)} loading={bulkArchive.isPending}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => archiveMut.mutate({ nmIds: [...selected], archived: !isArchive })}
+              loading={archiveMut.isPending}
+            >
               {isArchive ? 'Вернуть из архива' : 'Архивировать'}
             </Button>
           </div>
@@ -152,16 +166,20 @@ export function ProductsPage() {
         <Card>
           <LoadingBlock rows={6} />
         </Card>
-      ) : data.items.length === 0 ? (
+      ) : items.length === 0 ? (
         <Card>
-          <EmptyState icon="▤" title="Товары не найдены" description="Измените фильтр или запустите синхронизацию." />
+          <EmptyState title="Товары не найдены" description="Измените фильтр или запустите синхронизацию." />
         </Card>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 36 }} />
+                {selectMode && (
+                  <th style={{ width: 40 }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Выбрать все" />
+                  </th>
+                )}
                 <th>Артикул</th>
                 <th className="right">Остаток</th>
                 <th className="right">В пути</th>
@@ -169,24 +187,22 @@ export function ProductsPage() {
                 <th className="right">Запас</th>
                 <th className="right">Прибыль 30д</th>
                 <th>Статус</th>
+                <th style={{ width: 48 }} />
               </tr>
             </thead>
             <tbody>
-              {data.items.map((p) => (
-                <tr key={p.nmId} className={selected.has(p.nmId) ? 'selected' : ''}>
-                  <td>
-                    <input type="checkbox" checked={selected.has(p.nmId)} onChange={() => toggle(p.nmId)} />
-                  </td>
+              {items.map((p) => (
+                <tr key={p.nmId} className={selectMode && selected.has(p.nmId) ? 'selected' : ''}>
+                  {selectMode && (
+                    <td>
+                      <input type="checkbox" checked={selected.has(p.nmId)} onChange={() => toggle(p.nmId)} />
+                    </td>
+                  )}
                   <td>
                     <span className="cell-link" onClick={() => setOpenNm(p.nmId)}>
                       {p.supplierArticle}
                     </span>
-                    {!p.hasCost && (
-                      <span style={{ marginLeft: 6 }}>
-                        <Badge variant="warning">нет себест.</Badge>
-                      </span>
-                    )}
-                    {p.title && <div className="muted-3" style={{ fontSize: 12 }}>{p.title}</div>}
+                    {p.title && <div className="cell-sub">{p.title}</div>}
                   </td>
                   <td className="cell-num">{formatNum(p.currentStock)}</td>
                   <td className="cell-num">{p.inTransitQty > 0 ? formatNum(p.inTransitQty) : '—'}</td>
@@ -197,6 +213,13 @@ export function ProductsPage() {
                   </td>
                   <td>
                     <StatusBadge view={healthView(p.health)} />
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <IconButton
+                      icon="archive"
+                      label={isArchive ? 'Вернуть из архива' : 'В архив'}
+                      onClick={() => archiveMut.mutate({ nmIds: [p.nmId], archived: !isArchive })}
+                    />
                   </td>
                 </tr>
               ))}

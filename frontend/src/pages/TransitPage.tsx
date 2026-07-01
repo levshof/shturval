@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatDateFull } from '../lib/format';
 import { supplyStatusView } from '../lib/status';
-import { Button, Card, EmptyState, Field, Input, LoadingBlock, Modal, StatusBadge } from '../components/ui';
+import { Button, Card, EmptyState, Field, IconButton, Input, LoadingBlock, Modal, StatusBadge } from '../components/ui';
+import { Icon } from '../components/ui/icons';
 import { useToast } from '../components/ui/toast';
 
 interface Supply {
@@ -58,7 +59,7 @@ export function TransitPage() {
     return (
       <Card>
         <EmptyState
-          icon="⇉"
+          icon={<Icon name="truck" size={30} />}
           title="Активных поставок нет"
           description="Создайте поставку из карточки товара, когда закажете партию — она появится здесь и будет учтена в рекомендациях."
         />
@@ -102,12 +103,8 @@ export function TransitPage() {
                         Продолжить отслеживание
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => setEditDate(s)}>
-                      Дата
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove.mutate(s.id)}>
-                      Удалить
-                    </Button>
+                    <IconButton icon="calendar" label="Изменить дату" onClick={() => setEditDate(s)} />
+                    <IconButton icon="trash" label="Удалить" danger onClick={() => remove.mutate(s.id)} />
                   </div>
                 </td>
               </tr>

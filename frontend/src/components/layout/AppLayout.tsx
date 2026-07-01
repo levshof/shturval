@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { formatRelative } from '../../lib/format';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../ui/toast';
 import { Button, Spinner } from '../ui';
+import { Icon, type IconName } from '../ui/icons';
 
 export interface SyncStatus {
   isRunning: boolean;
@@ -13,52 +14,45 @@ export interface SyncStatus {
   latest: { status: string; error: string | null } | null;
 }
 
-const NAV = [
-  { to: '/', label: 'Дашборд', icon: '◵', end: true },
-  { to: '/products', label: 'Товары', icon: '▤', end: false },
-  { to: '/transit', label: 'В пути', icon: '⇉', end: false },
-  { to: '/settings', label: 'Настройки', icon: '⚙', end: false },
+const NAV: Array<{ to: string; label: string; icon: IconName; end: boolean }> = [
+  { to: '/', label: 'Дашборд', icon: 'dashboard', end: true },
+  { to: '/products', label: 'Товары', icon: 'box', end: false },
+  { to: '/transit', label: 'В пути', icon: 'truck', end: false },
+  { to: '/settings', label: 'Настройки', icon: 'settings', end: false },
 ];
-
-const TITLES: Record<string, string> = {
-  '/': 'Дашборд',
-  '/products': 'Товары',
-  '/transit': 'В пути',
-  '/settings': 'Настройки',
-};
 
 export function AppLayout() {
   const { logout } = useAuth();
-  const location = useLocation();
-  const title = TITLES[location.pathname] ?? 'WB Shturval';
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <span className="sidebar__logo">⎈</span>
+          <span className="sidebar__logo">
+            <Icon name="helm" size={18} />
+          </span>
           WB Shturval
         </div>
+
+        <SidebarSync />
+
         <nav className="nav">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav__item ${isActive ? 'active' : ''}`}>
-              <span aria-hidden>{n.icon}</span>
+              <Icon name={n.icon} size={18} />
               {n.label}
             </NavLink>
           ))}
         </nav>
+
         <div className="nav__spacer" />
         <button className="nav__item" onClick={() => void logout()}>
-          <span aria-hidden>⨯</span>
+          <Icon name="logout" size={18} />
           Выход
         </button>
       </aside>
 
       <div className="main">
-        <header className="topbar">
-          <div className="topbar__title">{title}</div>
-          <SyncControl />
-        </header>
         <main className="content">
           <Outlet />
         </main>
@@ -67,7 +61,7 @@ export function AppLayout() {
   );
 }
 
-function SyncControl() {
+function SidebarSync() {
   const qc = useQueryClient();
   const toast = useToast();
   const { data } = useQuery({
@@ -109,23 +103,22 @@ function SyncControl() {
   }, [running, data?.latest?.status, data?.latest?.error, qc, toast]);
 
   return (
-    <div className="row" style={{ gap: 12 }}>
+    <div className="sync-card">
+      <div className="sync-card__label">Синхронизация</div>
       {running ? (
         <>
-          <span className="row muted" style={{ gap: 6, fontSize: 13 }}>
+          <span className="sync-card__running">
             <Spinner brand /> Идёт синхронизация…
           </span>
-          <Button size="sm" variant="ghost" onClick={() => reset.mutate()} loading={reset.isPending}>
+          <Button size="sm" variant="secondary" block onClick={() => reset.mutate()} loading={reset.isPending}>
             Сбросить
           </Button>
         </>
       ) : (
         <>
-          <span className="muted" style={{ fontSize: 13 }}>
-            Обновлено: {formatRelative(data?.lastSyncAt)}
-          </span>
-          <Button size="sm" variant="primary" onClick={() => start.mutate()} loading={start.isPending}>
-            Синхронизировать
+          <div className="sync-card__time">Обновлено: {formatRelative(data?.lastSyncAt)}</div>
+          <Button size="sm" variant="primary" block onClick={() => start.mutate()} loading={start.isPending}>
+            <Icon name="refresh" size={15} /> Синхронизировать
           </Button>
         </>
       )}

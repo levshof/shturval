@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { formatDate, formatDateFull, formatMoney, formatMoneyShort, formatNum } from '../lib/format';
 import { healthView, PROFIT_STATUS, supplyStatusView } from '../lib/status';
 import { Banner, Button, Card, EmptyState, LoadingBlock, Metric, StatusBadge } from '../components/ui';
+import { Icon } from '../components/ui/icons';
 import { useToast } from '../components/ui/toast';
 import { ProductCardModal } from './ProductCardModal';
 
@@ -81,7 +82,7 @@ export function DashboardPage() {
     return (
       <Card>
         <EmptyState
-          icon="⎈"
+          icon={<Icon name="helm" size={30} />}
           title={data.setup.hasKey ? 'Запустите первую синхронизацию' : 'Подключите Wildberries'}
           description={
             data.setup.hasKey
@@ -104,52 +105,54 @@ export function DashboardPage() {
     <div className="stack">
       <SyncDiagnostics sync={data.sync} />
 
-      <div className="grid grid-3">
-        <Card pad="sm">
-          <Metric label="Выручка за 30 дней" value={<span className="num">{formatMoney(data.finance.revenue30)}</span>} />
-        </Card>
-        <Card pad="sm">
-          <div className="row between">
+      <div className="dash-split">
+        <div className="stack" style={{ gap: 16 }}>
+          <Card pad="sm">
+            <Metric label="Выручка за 30 дней" value={<span className="num">{formatMoney(data.finance.revenue30)}</span>} />
+          </Card>
+          <Card pad="sm" className="card--tint-success">
+            <div className="row between">
+              <Metric
+                label="Прибыль за 30 дней"
+                value={<span className="num">{formatMoney(data.finance.profit30)}</span>}
+                trend={data.finance.profit30 != null ? (data.finance.profit30 >= 0 ? 'up' : 'down') : undefined}
+              />
+              <StatusBadge view={PROFIT_STATUS[data.finance.profitStatus]} dot={false} />
+            </div>
+          </Card>
+          <Card pad="sm" className="card--tint-danger">
             <Metric
-              label="Прибыль за 30 дней"
-              value={<span className="num">{formatMoney(data.finance.profit30)}</span>}
-              trend={data.finance.profit30 != null ? (data.finance.profit30 >= 0 ? 'up' : 'down') : undefined}
+              label="Упущенная прибыль (нет товара)"
+              value={<span className="num">{formatMoney(data.finance.missedProfit30)}</span>}
+              trend={data.finance.missedProfit30 > 0 ? 'down' : undefined}
             />
-            <StatusBadge view={PROFIT_STATUS[data.finance.profitStatus]} dot={false} />
+          </Card>
+        </div>
+
+        <Card title="Выручка и прибыль, 30 дней">
+          <div style={{ width: '100%', height: 300 }}>
+            <ResponsiveContainer>
+              <AreaChart data={data.chart} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
+                <defs>
+                  <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--brand)" stopOpacity={0.22} />
+                    <stop offset="100%" stopColor="var(--brand)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 11, fill: 'var(--text-3)' }} interval={4} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickFormatter={(v) => formatMoneyShort(v)} width={64} />
+                <Tooltip
+                  formatter={(v: number, name) => [formatMoney(v), name === 'revenue' ? 'Выручка' : 'Прибыль']}
+                  labelFormatter={(l) => formatDateFull(String(l))}
+                />
+                <Area type="monotone" dataKey="revenue" stroke="var(--brand)" strokeWidth={2} fill="url(#rev)" />
+                <Area type="monotone" dataKey="profit" stroke="var(--success)" strokeWidth={2} fill="none" />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </Card>
-        <Card pad="sm">
-          <Metric
-            label="Упущенная прибыль (нет товара)"
-            value={<span className="num">{formatMoney(data.finance.missedProfit30)}</span>}
-            trend={data.finance.missedProfit30 > 0 ? 'down' : undefined}
-          />
-        </Card>
       </div>
-
-      <Card title="Выручка и прибыль, 30 дней">
-        <div style={{ width: '100%', height: 220 }}>
-          <ResponsiveContainer>
-            <AreaChart data={data.chart} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
-              <defs>
-                <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--brand)" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="var(--brand)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 11, fill: 'var(--text-3)' }} interval={4} />
-              <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickFormatter={(v) => formatMoneyShort(v)} width={64} />
-              <Tooltip
-                formatter={(v: number, name) => [formatMoney(v), name === 'revenue' ? 'Выручка' : 'Прибыль']}
-                labelFormatter={(l) => formatDateFull(String(l))}
-              />
-              <Area type="monotone" dataKey="revenue" stroke="var(--brand)" strokeWidth={2} fill="url(#rev)" />
-              <Area type="monotone" dataKey="profit" stroke="var(--success)" strokeWidth={2} fill="none" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
 
       <ActionPlan tasks={data.tasks} onOpen={setOpenNm} />
 
@@ -228,7 +231,7 @@ function ActionPlan({ tasks, onOpen }: { tasks: DashboardData['tasks']; onOpen: 
   const receives = dayTasks.filter((t) => t.type === 'receive');
 
   return (
-    <Card title="План действий на неделю">
+    <Card title="Что требует внимания">
       <div className="tabs" style={{ marginBottom: 16 }}>
         {days.map((d) => (
           <button key={d.date} className={`tab ${sel === d.date ? 'active' : ''}`} onClick={() => setSel(d.date)}>
