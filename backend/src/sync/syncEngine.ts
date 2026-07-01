@@ -34,8 +34,16 @@ type Steps = Record<string, Step>;
  *  has no timezone we append +03:00 so the stored UTC instant is correct. */
 function parseWbDate(s: string | undefined | null): Date {
   if (!s) return new Date(0);
-  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
-  return new Date(`${s}+03:00`);
+  // Date-only "YYYY-MM-DD" (WB uses this for date_from/date_to/rr_dt) has no
+  // time part, so "YYYY-MM-DD+03:00" would be Invalid — treat it as MSK midnight.
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(s)
+    ? `${s}T00:00:00+03:00`
+    : /[zZ]|[+-]\d{2}:?\d{2}$/.test(s)
+      ? s
+      : `${s}+03:00`;
+  const d = new Date(iso);
+  // Never hand an Invalid Date to Prisma — it rejects the whole createMany batch.
+  return Number.isNaN(d.getTime()) ? new Date(0) : d;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
