@@ -5,7 +5,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { api } from '../lib/api';
 import { formatDate, formatDateFull, formatMoney, formatMoneyShort, formatNum } from '../lib/format';
 import { healthView, PROFIT_STATUS, supplyStatusView } from '../lib/status';
-import { Button, Card, EmptyState, LoadingBlock, Metric, StatusBadge } from '../components/ui';
+import { Banner, Button, Card, EmptyState, LoadingBlock, Metric, StatusBadge } from '../components/ui';
 import { useToast } from '../components/ui/toast';
 import { ProductCardModal } from './ProductCardModal';
 
@@ -25,7 +25,28 @@ interface DashboardData {
   }>;
   hidden: Array<{ nmId: number; supplierArticle: string; title: string | null; recommendedQty: number; health: string }>;
   topProducts: Array<{ nmId: number; supplierArticle: string; category: string | null; units30: number; revenue30: number; profit30: number | null }>;
+  sync?: {
+    isRunning: boolean;
+    lastSyncAt: string | null;
+    lastStatus: string | null;
+    lastError: string | null;
+    steps: Record<string, { status: string; message?: string; count?: number }> | null;
+  };
 }
+
+// Human-readable labels for sync steps (matches syncEngine step keys).
+const SYNC_STEP_LABEL: Record<string, string> = {
+  key: 'API-ключ',
+  orders: 'Заказы',
+  sales: 'Продажи',
+  stocks: 'Остатки',
+  finance: 'Финансовый отчёт (расходы WB)',
+  ads: 'Реклама',
+  products: 'Карточки товаров',
+  supplies: 'Поставки',
+  recompute: 'Пересчёт аналитики',
+  fatal: 'Ошибка синхронизации',
+};
 
 function mskToday(): string {
   return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -81,6 +102,8 @@ export function DashboardPage() {
 
   return (
     <div className="stack">
+      <SyncDiagnostics sync={data.sync} />
+
       <div className="grid grid-3">
         <Card pad="sm">
           <Metric label="Выручка за 30 дней" value={<span className="num">{formatMoney(data.finance.revenue30)}</span>} />
@@ -136,6 +159,48 @@ export function DashboardPage() {
 
       {openNm != null && <ProductCardModal nmId={openNm} onClose={() => setOpenNm(null)} />}
     </div>
+  );
+}
+
+function SyncDiagnostics({ sync }: { sync: DashboardData['sync'] }) {
+  if (!sync || sync.isRunning) return null;
+
+  const steps = sync.steps ?? {};
+  // Surface only the steps that need attention (warnings/errors), so a clean
+  // sync stays quiet. This is where "why is advertising/expenses zero?" is
+  // answered: e.g. the key is missing the "Продвижение" category.
+  const problems = Object.entries(steps)
+    .filter(([, s]) => s && (s.status === 'warn' || s.status === 'error'))
+    .map(([key, s]) => ({ key, label: SYNC_STEP_LABEL[key] ?? key, ...s }));
+
+  const failed = sync.lastStatus === 'FAILED';
+  if (!failed && problems.length === 0) return null;
+
+  return (
+    <Card title="Состояние последней синхронизации">
+      <div className="stack" style={{ gap: 8 }}>
+        {failed && (
+          <Banner variant="danger" title="Синхронизация завершилась с ошибкой">
+            {sync.lastError ?? 'Неизвестная ошибка. Запустите синхронизацию повторно.'}
+          </Banner>
+        )}
+        {problems.map((p) => (
+          <Banner key={p.key} variant={p.status === 'error' ? 'danger' : 'warning'} title={p.label}>
+            {p.message ?? 'Данные за этот раздел не загрузились.'}
+            {p.key === 'ads' && (
+              <div className="muted-3" style={{ fontSize: 12, marginTop: 4 }}>
+                Проверьте, что в токене WB включена категория «Продвижение» и есть активные кампании за период.
+              </div>
+            )}
+            {p.key === 'finance' && (
+              <div className="muted-3" style={{ fontSize: 12, marginTop: 4 }}>
+                Финансовый отчёт WB формируется по закрытым неделям — расходы WB и прибыль появятся после его загрузки.
+              </div>
+            )}
+          </Banner>
+        ))}
+      </div>
+    </Card>
   );
 }
 

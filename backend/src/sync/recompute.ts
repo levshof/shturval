@@ -176,6 +176,7 @@ export async function recomputeUser(prisma: Db, userId: string, now: Date = new 
 
     const financeLite: FinanceLite[] = (financeByNm.get(nmId) ?? []).map((r) => ({
       docTypeName: r.docTypeName ?? null,
+      quantity: r.quantity ?? 0,
       retailAmount: toNum(r.retailAmount),
       ppvzForPay: toNum(r.ppvzForPay),
       deliveryRub: toNum(r.deliveryRub),

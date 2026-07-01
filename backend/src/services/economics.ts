@@ -10,6 +10,7 @@ import { computeEconomics, missedProfit, type EconomicsResult } from '../domain/
 
 export interface FinanceLite {
   docTypeName: string | null;
+  quantity: number | null;
   retailAmount: number | null;
   ppvzForPay: number | null;
   deliveryRub: number | null;
@@ -29,6 +30,9 @@ function isReturnDoc(docTypeName: string | null): boolean {
 export interface FinanceSummary {
   hasFinanceReport: boolean;
   financeRevenue: number | null;
+  /** Net units the report actually covers (returns subtract). Used so revenue,
+   *  cost and per-unit metrics all share the same "verified weeks" period. */
+  financeUnits: number | null;
   sellerPayout: number | null;
   wbExpensesDetail: number | null;
 }
@@ -40,18 +44,26 @@ export function summarizeFinanceWindow(rows: FinanceLite[], last30: Set<string>)
     return last30.has(attr);
   });
   if (inWindow.length === 0) {
-    return { hasFinanceReport: false, financeRevenue: null, sellerPayout: null, wbExpensesDetail: null };
+    return {
+      hasFinanceReport: false,
+      financeRevenue: null,
+      financeUnits: null,
+      sellerPayout: null,
+      wbExpensesDetail: null,
+    };
   }
   let rev = 0;
+  let units = 0;
   let payout = 0;
   let parts = 0;
   for (const r of inWindow) {
     const sign = isReturnDoc(r.docTypeName) ? -1 : 1;
     rev += sign * (r.retailAmount ?? 0);
+    units += sign * (r.quantity ?? 0);
     payout += r.ppvzForPay ?? 0; // returns already carry negative ppvz_for_pay
     parts += (r.deliveryRub ?? 0) + (r.storageFee ?? 0) + (r.penalty ?? 0) + (r.deduction ?? 0) + (r.acceptance ?? 0);
   }
-  return { hasFinanceReport: true, financeRevenue: rev, sellerPayout: payout, wbExpensesDetail: parts };
+  return { hasFinanceReport: true, financeRevenue: rev, financeUnits: units, sellerPayout: payout, wbExpensesDetail: parts };
 }
 
 export interface ProductComputeInput {
@@ -86,8 +98,18 @@ export function computeProductView(input: ProductComputeInput): ProductComputeRe
     settings: input.settings,
   });
 
+  // Keep revenue and units on the same period. When a finance report is present,
+  // revenue/payout come from the closed ("verified") weeks it covers, so cost and
+  // per-unit metrics must use the units from THAT report — not the full 30-day
+  // sales count (which includes not-yet-reconciled sales). Otherwise cost is
+  // overstated and profit/margin come out wrong (BUG-0002).
+  const economicsUnits =
+    input.finance.hasFinanceReport && input.finance.financeUnits != null && input.finance.financeUnits > 0
+      ? input.finance.financeUnits
+      : input.units30;
+
   const economics = computeEconomics({
-    units: input.units30,
+    units: economicsUnits,
     financeRevenue: input.finance.financeRevenue,
     salesFallbackRevenue: input.finance.hasFinanceReport ? null : input.salesFallbackRevenue,
     sellerPayout: input.finance.sellerPayout,
@@ -101,7 +123,7 @@ export function computeProductView(input: ProductComputeInput): ProductComputeRe
     hasProjection: input.finance.hasFinanceReport,
   });
 
-  const avgPrice = input.units30 > 0 ? economics.revenue / input.units30 : null;
+  const avgPrice = economicsUnits > 0 ? economics.revenue / economicsUnits : null;
   const missed =
     metrics.health === 'NO_STOCK'
       ? missedProfit(metrics.avgDailySales, input.missedDays, economics.profitPerUnit)

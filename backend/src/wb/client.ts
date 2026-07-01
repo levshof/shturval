@@ -322,16 +322,47 @@ export class WbClient {
     // Chunk ids to keep the query string sane.
     for (let i = 0; i < ids.length; i += 50) {
       const chunk = ids.slice(i, i + 50);
-      const resp = await this.request<WbAdvFullStat[]>({
-        host: HOST.advert,
-        path: '/adv/v3/fullstats',
-        query: { ids: chunk.join(','), beginDate, endDate },
-        rlKey: 'adv:fullstats',
-        intervalMs: LENIENT_INTERVAL_MS,
-      });
-      if (Array.isArray(resp)) out.push(...resp);
+      try {
+        out.push(...(await this.advFullStatsChunk(chunk, beginDate, endDate)));
+      } catch (err) {
+        // WB answers 400 for the WHOLE batch if even one campaign in it has no
+        // statistics for the period (archived / never-shown campaigns). Without
+        // this, a single dead campaign zeroes out ALL advertising spend. Salvage
+        // the batch by re-querying each campaign one-by-one and skipping only the
+        // ones that genuinely have nothing (BUG-0001).
+        if (err instanceof WbError && err.code === 'BAD_REQUEST') {
+          for (const id of chunk) {
+            try {
+              out.push(...(await this.advFullStatsChunk([id], beginDate, endDate)));
+            } catch (single) {
+              if (single instanceof WbError && single.code === 'BAD_REQUEST') {
+                this.log('adv fullstats: campaign has no stats in period, skipping', { advertId: id });
+                continue;
+              }
+              throw single;
+            }
+          }
+        } else {
+          throw err;
+        }
+      }
     }
     return out;
+  }
+
+  private async advFullStatsChunk(
+    ids: number[],
+    beginDate: string,
+    endDate: string,
+  ): Promise<WbAdvFullStat[]> {
+    const resp = await this.request<WbAdvFullStat[]>({
+      host: HOST.advert,
+      path: '/adv/v3/fullstats',
+      query: { ids: ids.join(','), beginDate, endDate },
+      rlKey: 'adv:fullstats',
+      intervalMs: LENIENT_INTERVAL_MS,
+    });
+    return Array.isArray(resp) ? resp : [];
   }
 
   /** Lightweight validation used when a key is connected (spec: show key is valid). */

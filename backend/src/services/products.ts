@@ -258,6 +258,7 @@ export async function getProductCard(prisma: Db, userId: string, nmId: number, n
   }
   const financeLite: FinanceLite[] = finance.map((r) => ({
     docTypeName: r.docTypeName,
+    quantity: r.quantity ?? 0,
     retailAmount: num(r.retailAmount),
     ppvzForPay: num(r.ppvzForPay),
     deliveryRub: num(r.deliveryRub),
