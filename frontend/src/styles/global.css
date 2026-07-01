@@ -222,6 +222,18 @@ p {
   gap: var(--sp-4);
   align-items: stretch;
 }
+.dash-split__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  height: 100%;
+}
+.dash-split__col > .card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .row {
   display: flex;
   align-items: center;
@@ -527,6 +539,28 @@ table.table {
   color: var(--text-3);
   font-size: var(--fs-caption);
   margin-top: 2px;
+}
+.table th.center,
+.table td.center {
+  text-align: center;
+}
+.table .cell-cnum {
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+.table th.active {
+  color: var(--brand-strong);
+}
+.th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.table--dense tbody td {
+  height: 40px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 /* Native checkbox tinted to brand */

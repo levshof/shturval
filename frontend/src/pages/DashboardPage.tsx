@@ -106,7 +106,7 @@ export function DashboardPage() {
       <SyncDiagnostics sync={data.sync} />
 
       <div className="dash-split">
-        <div className="stack" style={{ gap: 16 }}>
+        <div className="dash-split__col">
           <Card pad="sm">
             <Metric label="Выручка за 30 дней" value={<span className="num">{formatMoney(data.finance.revenue30)}</span>} />
           </Card>

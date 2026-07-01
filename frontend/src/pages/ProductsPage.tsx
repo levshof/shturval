@@ -14,7 +14,6 @@ import {
   Input,
   LoadingBlock,
   Modal,
-  Select,
   StatusBadge,
   Textarea,
 } from '../components/ui';
@@ -56,13 +55,15 @@ const FILTERS: Array<{ key: string; label: string }> = [
   { key: 'archive', label: 'Архив' },
 ];
 
-const SORTS: Array<{ key: string; label: string }> = [
-  { key: 'status', label: 'По статусу' },
-  { key: 'article', label: 'По артикулу' },
-  { key: 'stock', label: 'По остатку' },
-  { key: 'perDay', label: 'По продажам/день' },
-  { key: 'days', label: 'По запасу' },
-  { key: 'profit', label: 'По прибыли' },
+// Clickable column headers drive sorting. `sortKey: null` = not sortable.
+const COLUMNS: Array<{ sortKey: string | null; label: string; align: 'left' | 'center' }> = [
+  { sortKey: 'article', label: 'Артикул', align: 'left' },
+  { sortKey: 'stock', label: 'Остаток', align: 'center' },
+  { sortKey: null, label: 'В пути', align: 'center' },
+  { sortKey: 'perDay', label: 'Прод./день', align: 'center' },
+  { sortKey: 'days', label: 'Запас', align: 'center' },
+  { sortKey: 'profit', label: 'Прибыль 30д', align: 'center' },
+  { sortKey: 'status', label: 'Статус', align: 'center' },
 ];
 
 export function ProductsPage() {
@@ -111,7 +112,7 @@ export function ProductsPage() {
   return (
     <div className="stack">
       <Card pad="sm">
-        <div className="row between wrap">
+        <div className="row between wrap" style={{ gap: 10 }}>
           <div className="tabs">
             {FILTERS.map((f) => (
               <button key={f.key} className={`tab ${filter === f.key ? 'active' : ''}`} onClick={() => setFilter(f.key)}>
@@ -120,46 +121,35 @@ export function ProductsPage() {
               </button>
             ))}
           </div>
-          {data && data.missingCostCount > 0 && (
-            <Chip icon="tag" onClick={() => setImportOpen(true)}>
-              Себест. <span className="chip__count">{data.missingCostCount}</span>
-            </Chip>
-          )}
+          <div className="row" style={{ gap: 8 }}>
+            <Input placeholder="Поиск по артикулу" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 190 }} />
+            {data && data.missingCostCount > 0 && (
+              <Chip icon="tag" onClick={() => setImportOpen(true)}>
+                Себест. <span className="chip__count">{data.missingCostCount}</span>
+              </Chip>
+            )}
+          </div>
         </div>
 
-        <div className="row between wrap" style={{ marginTop: 12 }}>
+        <div className="row between wrap" style={{ marginTop: 10 }}>
           <button className={`linkbtn ${selectMode ? 'active' : ''}`} onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}>
             <Icon name="check-square" size={15} />
             {selectMode ? 'Готово' : 'Выбрать несколько'}
           </button>
-          <div className="row" style={{ gap: 8 }}>
-            <Input placeholder="Поиск по артикулу" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 200 }} />
-            <Select value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: 170 }}>
-              {SORTS.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </Select>
-            <Button variant="ghost" onClick={() => setImportOpen(true)}>
-              Импорт себест.
-            </Button>
-          </div>
+          {selectMode && selected.size > 0 && (
+            <div className="row" style={{ gap: 10 }}>
+              <span className="muted">Выбрано: {selected.size}</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => archiveMut.mutate({ nmIds: [...selected], archived: !isArchive })}
+                loading={archiveMut.isPending}
+              >
+                {isArchive ? 'Вернуть из архива' : 'Архивировать'}
+              </Button>
+            </div>
+          )}
         </div>
-
-        {selectMode && selected.size > 0 && (
-          <div className="row between" style={{ marginTop: 12 }}>
-            <span className="muted">Выбрано: {selected.size}</span>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => archiveMut.mutate({ nmIds: [...selected], archived: !isArchive })}
-              loading={archiveMut.isPending}
-            >
-              {isArchive ? 'Вернуть из архива' : 'Архивировать'}
-            </Button>
-          </div>
-        )}
       </Card>
 
       {isLoading || !data ? (
@@ -172,7 +162,7 @@ export function ProductsPage() {
         </Card>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table table--dense">
             <thead>
               <tr>
                 {selectMode && (
@@ -180,13 +170,21 @@ export function ProductsPage() {
                     <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Выбрать все" />
                   </th>
                 )}
-                <th>Артикул</th>
-                <th className="right">Остаток</th>
-                <th className="right">В пути</th>
-                <th className="right">Прод./день</th>
-                <th className="right">Запас</th>
-                <th className="right">Прибыль 30д</th>
-                <th>Статус</th>
+                {COLUMNS.map((c) => {
+                  const active = !!c.sortKey && sort === c.sortKey;
+                  return (
+                    <th
+                      key={c.label}
+                      className={`${c.sortKey ? 'sortable' : ''} ${c.align === 'center' ? 'center' : ''} ${active ? 'active' : ''}`}
+                      onClick={c.sortKey ? () => setSort(c.sortKey!) : undefined}
+                    >
+                      <span className="th-inner">
+                        {c.label}
+                        {active && <Icon name="chevron-down" size={13} />}
+                      </span>
+                    </th>
+                  );
+                })}
                 <th style={{ width: 48 }} />
               </tr>
             </thead>
@@ -202,19 +200,18 @@ export function ProductsPage() {
                     <span className="cell-link" onClick={() => setOpenNm(p.nmId)}>
                       {p.supplierArticle}
                     </span>
-                    {p.title && <div className="cell-sub">{p.title}</div>}
                   </td>
-                  <td className="cell-num">{formatNum(p.currentStock)}</td>
-                  <td className="cell-num">{p.inTransitQty > 0 ? formatNum(p.inTransitQty) : '—'}</td>
-                  <td className="cell-num">{formatNum(p.avgDailySales, 1)}</td>
-                  <td className="cell-num">{p.daysOfStock != null ? formatDays(p.daysOfStock) : '—'}</td>
-                  <td className="cell-num">
+                  <td className="cell-cnum">{formatNum(p.currentStock)}</td>
+                  <td className="cell-cnum">{p.inTransitQty > 0 ? formatNum(p.inTransitQty) : '—'}</td>
+                  <td className="cell-cnum">{formatNum(p.avgDailySales, 1)}</td>
+                  <td className="cell-cnum">{p.daysOfStock != null ? formatDays(p.daysOfStock) : '—'}</td>
+                  <td className="cell-cnum">
                     {p.profit30 != null ? formatMoney(p.profit30) : <span className="muted-3">{dataQualityView(p.dataQuality).label}</span>}
                   </td>
-                  <td>
+                  <td className="center">
                     <StatusBadge view={healthView(p.health)} />
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td className="center">
                     <IconButton
                       icon="archive"
                       label={isArchive ? 'Вернуть из архива' : 'В архив'}
