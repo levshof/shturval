@@ -162,19 +162,48 @@ export async function runSync(prisma: Db, userId: string, opts: SyncOptions): Pr
     // ── 5. advertising (soft: missing access is a warning, not a failure) ──
     try {
       const ids = await client.fetchAdvCampaignIds();
+      const beginDate = addDaysStr(today, -30);
+      log('adv: campaigns fetched', { count: ids.length });
       if (ids.length === 0) {
-        steps.ads = { status: 'warn', message: 'Рекламных кампаний не найдено' };
+        steps.ads = {
+          status: 'warn',
+          message:
+            'Рекламных кампаний не найдено. Проверьте, что в токене WB включена категория «Продвижение» и есть кампании в кабинете.',
+        };
       } else {
-        const adStats = await client.fetchAdvFullStats(ids, addDaysStr(today, -30), today);
+        const adStats = await client.fetchAdvFullStats(ids, beginDate, today);
         const adResult = await persistAds(prisma, userId, adStats);
-        const unattributedNote =
-          adResult.unattributedSpend > 0
-            ? ` Не удалось привязать к товару ${Math.round(adResult.unattributedSpend)} ₽ расхода (кампании без разбивки по товарам за весь период).`
-            : undefined;
-        steps.ads = { status: 'ok', count: adResult.count, message: unattributedNote };
-        stats.adRows = adResult.count;
+        log('adv: fullstats persisted', {
+          campaigns: ids.length,
+          records: adStats.length,
+          rows: adResult.count,
+          totalSpendSeen: Math.round(adResult.totalSpendSeen),
+          unattributed: Math.round(adResult.unattributedSpend),
+        });
+        if (adResult.count === 0) {
+          // Campaigns exist but nothing landed in ad_stats. Never report this as
+          // a silent "ok" — surface WHY, distinguishing the WB failure modes so
+          // the seller knows what to check (spec 0.4 / DIAG-0001, BUG-0005).
+          const detail =
+            adStats.length === 0
+              ? `WB не вернул статистику ни по одной из ${ids.length} кампаний за период ${beginDate}…${today} (возможно, за 30 дней не было показов/трат).`
+              : `WB вернул статистику по ${adStats.length} кампани(ям), но с нулевым расходом за период ${beginDate}…${today} — это известный сбой adv/v3/fullstats (нулевые sum/views/clicks) либо трат за период не было.`;
+          steps.ads = {
+            status: 'warn',
+            count: 0,
+            message: `${detail} Повторите синхронизацию; если расход виден в кабинете WB, а здесь по-прежнему 0 — дело в ответе WB API за этот период.`,
+          };
+        } else {
+          const unattributedNote =
+            adResult.unattributedSpend > 0
+              ? ` Не удалось привязать к товару ${Math.round(adResult.unattributedSpend)} ₽ расхода (кампании без разбивки по товарам за весь период).`
+              : undefined;
+          steps.ads = { status: 'ok', count: adResult.count, message: unattributedNote };
+          stats.adRows = adResult.count;
+        }
       }
     } catch (err) {
+      log('adv: step failed', { error: (err as Error).message });
       steps.ads = { status: 'warn', message: describeWbError(err, 'реклама') };
     }
 
@@ -310,11 +339,15 @@ async function persistAds(
   prisma: Db,
   userId: string,
   stats: import('../wb/types').WbAdvFullStat[],
-): Promise<{ count: number; unattributedSpend: number }> {
+): Promise<{ count: number; unattributedSpend: number; totalSpendSeen: number }> {
   // Build per-campaign/day inputs for the allocator: WB's day-level `sum` is
   // the reliable "how much was spent" figure; `nm[]` (merged across apps) is
   // "how it splits across products", which can be incomplete (BUG-0004).
   const campaignDays: AdCampaignDayInput[] = [];
+  // Total spend WB reported across every campaign/day, before allocation — used
+  // by the caller to tell "WB returned zero spend" apart from "spend lost in
+  // attribution" when nothing lands in ad_stats (BUG-0005 diagnostics).
+  let totalSpendSeen = 0;
   for (const camp of stats) {
     for (const day of camp.days ?? []) {
       const date = day.date ? mskDateString(parseWbDate(day.date)) : null;
@@ -333,6 +366,7 @@ async function persistAds(
       // behaviour degrades to "precise only" (no invented allocation) rather
       // than guessing — see domain/ads.ts for the allocation rule itself.
       const totalSpend = day.sum ?? nmTotal;
+      totalSpendSeen += totalSpend;
       campaignDays.push({ advertId: camp.advertId, date, totalSpend, nm: nmRows });
     }
   }
@@ -370,7 +404,7 @@ async function persistAds(
     count++;
   }
   const unattributedSpend = unattributed.reduce((s, u) => s + u.spend, 0);
-  return { count, unattributedSpend };
+  return { count, unattributedSpend, totalSpendSeen };
 }
 
 // ── stocks helpers ───────────────────────────────────────────────────────────

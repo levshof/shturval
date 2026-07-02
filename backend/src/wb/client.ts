@@ -309,6 +309,9 @@ export class WbClient {
     for (const group of resp.adverts ?? []) {
       for (const a of group.advert_list ?? []) ids.push(a.advertId);
     }
+    // Surface the raw shape so an empty/unexpected promotion/count response is
+    // diagnosable from logs rather than silently yielding zero campaigns.
+    this.log('adv promotion/count', { groups: resp.adverts?.length ?? 0, all: resp.all, ids: ids.length });
     return ids;
   }
 
@@ -331,6 +334,7 @@ export class WbClient {
         // the batch by re-querying each campaign one-by-one and skipping only the
         // ones that genuinely have nothing (BUG-0001).
         if (err instanceof WbError && err.code === 'BAD_REQUEST') {
+          this.log('adv fullstats: batch 400, retrying campaigns one-by-one', { chunk: chunk.length });
           for (const id of chunk) {
             try {
               out.push(...(await this.advFullStatsChunk([id], beginDate, endDate)));
@@ -347,6 +351,7 @@ export class WbClient {
         }
       }
     }
+    this.log('adv fullstats fetched', { requested: ids.length, records: out.length });
     return out;
   }
 
