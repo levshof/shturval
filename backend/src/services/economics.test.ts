@@ -55,6 +55,21 @@ describe('summarizeFinanceWindow', () => {
     expect(s.hasFinanceReport).toBe(false);
     expect(s.financeUnits).toBeNull();
   });
+
+  it('ignores non-sale operation rows (logistics/storage/penalty) when counting units and revenue (BUG-0003)', () => {
+    const rows: FinanceLite[] = [
+      financeRow({ quantity: 10, retailAmount: 10_000, ppvzForPay: 7_000, saleDt: new Date('2026-06-20T00:00:00+03:00') }),
+      // Non-sale operation rows: WB attaches a `quantity` to these too, but no retail_amount.
+      financeRow({ docTypeName: 'Логистика', quantity: 10, retailAmount: null, deliveryRub: 300, saleDt: new Date('2026-06-20T00:00:00+03:00') }),
+      financeRow({ docTypeName: 'Хранение', quantity: 50, retailAmount: 0, storageFee: 120, saleDt: new Date('2026-06-21T00:00:00+03:00') }),
+      financeRow({ docTypeName: 'Платная приёмка', quantity: 5, retailAmount: null, acceptance: 50, saleDt: new Date('2026-06-21T00:00:00+03:00') }),
+    ];
+    const s = summarizeFinanceWindow(rows, last30);
+    expect(s.financeUnits).toBe(10); // only the sale row's quantity counts, not 10+10+50+5
+    expect(s.financeRevenue).toBe(10_000); // non-sale rows contribute 0 retail_amount
+    expect(s.sellerPayout).toBe(7_000); // payout unaffected
+    expect(s.wbExpensesDetail).toBe(470); // 300 + 120 + 50 — expense parts still summed over all rows
+  });
 });
 
 describe('computeProductView period consistency (BUG-0002)', () => {
@@ -79,6 +94,7 @@ describe('computeProductView period consistency (BUG-0002)', () => {
       salesFallbackRevenue: null,
       adSpend: 0,
       hasAds: true,
+      adEstimated: false,
       unitCost: 500,
       missedDays: 0,
     });
@@ -103,6 +119,7 @@ describe('computeProductView period consistency (BUG-0002)', () => {
       salesFallbackRevenue: 45_000,
       adSpend: 0,
       hasAds: false,
+      adEstimated: false,
       unitCost: 500,
       missedDays: 0,
     });

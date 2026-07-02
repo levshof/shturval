@@ -11,6 +11,7 @@ import {
   type SupplyState,
   type SupplyStatus,
 } from '../domain/supplyTracking';
+import { allocateAdSpend, type AdCampaignDayInput, type AdSpendSource } from '../domain/ads';
 import { guardStocks, guardTruncated } from './guards';
 import { recomputeUser } from './recompute';
 
@@ -165,9 +166,13 @@ export async function runSync(prisma: Db, userId: string, opts: SyncOptions): Pr
         steps.ads = { status: 'warn', message: 'Рекламных кампаний не найдено' };
       } else {
         const adStats = await client.fetchAdvFullStats(ids, addDaysStr(today, -30), today);
-        const adCount = await persistAds(prisma, userId, adStats);
-        steps.ads = { status: 'ok', count: adCount };
-        stats.adRows = adCount;
+        const adResult = await persistAds(prisma, userId, adStats);
+        const unattributedNote =
+          adResult.unattributedSpend > 0
+            ? ` Не удалось привязать к товару ${Math.round(adResult.unattributedSpend)} ₽ расхода (кампании без разбивки по товарам за весь период).`
+            : undefined;
+        steps.ads = { status: 'ok', count: adResult.count, message: unattributedNote };
+        stats.adRows = adResult.count;
       }
     } catch (err) {
       steps.ads = { status: 'warn', message: describeWbError(err, 'реклама') };
@@ -305,30 +310,51 @@ async function persistAds(
   prisma: Db,
   userId: string,
   stats: import('../wb/types').WbAdvFullStat[],
-): Promise<number> {
-  // Aggregate spend per nmId per day.
-  const byKey = new Map<string, { nmId: number; date: string; spend: number; views: number; clicks: number; orders: number }>();
+): Promise<{ count: number; unattributedSpend: number }> {
+  // Build per-campaign/day inputs for the allocator: WB's day-level `sum` is
+  // the reliable "how much was spent" figure; `nm[]` (merged across apps) is
+  // "how it splits across products", which can be incomplete (BUG-0004).
+  const campaignDays: AdCampaignDayInput[] = [];
   for (const camp of stats) {
     for (const day of camp.days ?? []) {
       const date = day.date ? mskDateString(parseWbDate(day.date)) : null;
       if (!date) continue;
-      for (const app of day.apps ?? []) {
-        for (const nm of app.nm ?? []) {
-          const key = `${nm.nmId}|${date}`;
-          const cur = byKey.get(key) ?? { nmId: nm.nmId, date, spend: 0, views: 0, clicks: 0, orders: 0 };
-          cur.spend += nm.sum ?? 0;
-          cur.views += nm.views ?? 0;
-          cur.clicks += nm.clicks ?? 0;
-          cur.orders += nm.orders ?? 0;
-          byKey.set(key, cur);
-        }
-      }
+      const nmRows = (day.apps ?? []).flatMap((app) =>
+        (app.nm ?? []).map((nm) => ({
+          nmId: nm.nmId,
+          spend: nm.sum ?? 0,
+          views: nm.views ?? 0,
+          clicks: nm.clicks ?? 0,
+          orders: nm.orders ?? 0,
+        })),
+      );
+      const nmTotal = nmRows.reduce((s, r) => s + r.spend, 0);
+      // Fall back to the precise total when WB gives no day-level figure, so
+      // behaviour degrades to "precise only" (no invented allocation) rather
+      // than guessing — see domain/ads.ts for the allocation rule itself.
+      const totalSpend = day.sum ?? nmTotal;
+      campaignDays.push({ advertId: camp.advertId, date, totalSpend, nm: nmRows });
     }
   }
+
+  const { rows, unattributed } = allocateAdSpend(campaignDays);
+
+  // Multiple campaigns can contribute to the same nmId/date/source — aggregate before upsert.
+  const byKey = new Map<string, { nmId: number; date: string; spend: number; views: number; clicks: number; orders: number; source: AdSpendSource }>();
+  for (const r of rows) {
+    const key = `${r.nmId}|${r.date}|${r.source}`;
+    const cur = byKey.get(key) ?? { nmId: r.nmId, date: r.date, spend: 0, views: 0, clicks: 0, orders: 0, source: r.source };
+    cur.spend += r.spend;
+    cur.views += r.views;
+    cur.clicks += r.clicks;
+    cur.orders += r.orders;
+    byKey.set(key, cur);
+  }
+
   let count = 0;
   for (const v of byKey.values()) {
     await prisma.adStat.upsert({
-      where: { userId_nmId_date_source: { userId, nmId: v.nmId, date: parseDateStr(v.date), source: 'PRECISE' } },
+      where: { userId_nmId_date_source: { userId, nmId: v.nmId, date: parseDateStr(v.date), source: v.source } },
       create: {
         userId,
         nmId: v.nmId,
@@ -337,13 +363,14 @@ async function persistAds(
         views: v.views,
         clicks: v.clicks,
         orders: v.orders,
-        source: 'PRECISE',
+        source: v.source,
       },
       update: { spend: v.spend, views: v.views, clicks: v.clicks, orders: v.orders },
     });
     count++;
   }
-  return count;
+  const unattributedSpend = unattributed.reduce((s, u) => s + u.spend, 0);
+  return { count, unattributedSpend };
 }
 
 // ── stocks helpers ───────────────────────────────────────────────────────────

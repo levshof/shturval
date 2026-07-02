@@ -103,11 +103,24 @@ export interface WbAdvCampaignCount {
   all?: number;
 }
 
-/** adv/v3/fullstats — per-campaign stats with day/nm breakdown. */
+/**
+ * adv/v3/fullstats — per-campaign stats with day/nm breakdown.
+ * `days[].sum`/`views`/`clicks` are WB's own day-level totals for the
+ * campaign — separate from (and more reliable than) the nested
+ * `apps[].nm[]` per-product breakdown, which WB is known to sometimes
+ * return incomplete or zeroed for individual products, especially on
+ * auto-targeting campaigns (dev.wildberries.ru/forum/1441). We use the
+ * day-level total as the source of truth for how much was actually spent,
+ * and only rely on `nm[]` for *how it splits across products* (see
+ * `domain/ads.ts`).
+ */
 export interface WbAdvFullStat {
   advertId: number;
   days?: Array<{
     date?: string;
+    sum?: number;
+    views?: number;
+    clicks?: number;
     apps?: Array<{
       nm?: Array<{
         nmId: number;

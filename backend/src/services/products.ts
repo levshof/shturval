@@ -287,6 +287,7 @@ export async function getProductCard(prisma: Db, userId: string, nmId: number, n
     salesFallbackRevenue: fallbackRevenue > 0 ? fallbackRevenue : null,
     adSpend: ads.length > 0 ? ads.reduce((s, a) => s + num0(a.spend), 0) : null,
     hasAds: ads.length > 0,
+    adEstimated: ads.some((a) => a.source === 'ALLOCATED'),
     unitCost: currentUnitCost(costs.map((c) => ({ unitCost: num0(c.unitCost), effectiveFrom: c.effectiveFrom })), now),
     missedDays,
   });
@@ -335,11 +336,12 @@ export async function getProductCard(prisma: Db, userId: string, nmId: number, n
     economics: {
       revenue: round2(view.economics.revenue),
       profit: view.economics.profit == null ? null : round2(view.economics.profit),
-      units: units30,
+      units: view.economics.units,
       avgPrice: view.avgPrice == null ? null : round2(view.avgPrice),
       cost: view.economics.cost == null ? null : round2(view.economics.cost),
       wbExpenses: view.economics.wbExpenses == null ? null : round2(view.economics.wbExpenses),
       adSpend: round2(view.economics.adSpend),
+      adEstimated: view.economics.adEstimated,
       tax: round2(view.economics.tax),
       profitPerUnit: view.economics.profitPerUnit == null ? null : round2(view.economics.profitPerUnit),
       marginPercent: view.economics.marginPercent == null ? null : round2(view.economics.marginPercent),

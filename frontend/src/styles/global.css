@@ -679,6 +679,11 @@ input[type='checkbox'] {
   font-weight: 600;
   font-size: 15px;
 }
+.mini__hint {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
 
 /* ── Banners ────────────────────────────────────────────────────────────── */
 .banner {

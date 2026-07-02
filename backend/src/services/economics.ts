@@ -58,8 +58,16 @@ export function summarizeFinanceWindow(rows: FinanceLite[], last30: Set<string>)
   let parts = 0;
   for (const r of inWindow) {
     const sign = isReturnDoc(r.docTypeName) ? -1 : 1;
-    rev += sign * (r.retailAmount ?? 0);
-    units += sign * (r.quantity ?? 0);
+    // The finance report emits one row per WB operation (sale, logistics,
+    // storage, penalty, acceptance, ...) — only sale/return lines carry a
+    // non-zero retail_amount. Non-sale rows also carry `quantity` (e.g. units
+    // affected by a storage fee), so summing quantity across ALL rows wildly
+    // overcounts units sold and inflates cost = unitCost × units (BUG-0003).
+    const isSaleLine = (r.retailAmount ?? 0) !== 0;
+    if (isSaleLine) {
+      rev += sign * (r.retailAmount ?? 0);
+      units += sign * (r.quantity ?? 0);
+    }
     payout += r.ppvzForPay ?? 0; // returns already carry negative ppvz_for_pay
     parts += (r.deliveryRub ?? 0) + (r.storageFee ?? 0) + (r.penalty ?? 0) + (r.deduction ?? 0) + (r.acceptance ?? 0);
   }
@@ -78,6 +86,8 @@ export interface ProductComputeInput {
   salesFallbackRevenue: number | null;
   adSpend: number | null;
   hasAds: boolean;
+  /** True when some of adSpend was proportionally allocated rather than reported per product (spec 9.4). */
+  adEstimated: boolean;
   unitCost: number | null;
   missedDays: number;
 }
@@ -115,7 +125,7 @@ export function computeProductView(input: ProductComputeInput): ProductComputeRe
     sellerPayout: input.finance.sellerPayout,
     wbExpensesDetail: input.finance.wbExpensesDetail,
     adSpend: input.adSpend,
-    adEstimated: false,
+    adEstimated: input.adEstimated,
     unitCost: input.unitCost,
     taxRatePercent: input.taxPercent,
     hasFinanceReport: input.finance.hasFinanceReport,

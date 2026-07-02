@@ -137,10 +137,12 @@ export async function recomputeUser(prisma: Db, userId: string, now: Date = new 
   const last30 = new Set<string>();
   for (let i = 0; i < 30; i++) last30.add(addDaysStr(today, -i));
   const adByNm = new Map<number, number>();
+  const adEstimatedByNm = new Set<number>();
   for (const a of ads) {
     const day = mskDateString(a.date);
     if (!last30.has(day)) continue;
     adByNm.set(a.nmId, (adByNm.get(a.nmId) ?? 0) + n0(a.spend));
+    if (a.source === 'ALLOCATED') adEstimatedByNm.add(a.nmId);
   }
   const hasAnyAds = ads.length > 0;
 
@@ -206,6 +208,7 @@ export async function recomputeUser(prisma: Db, userId: string, now: Date = new 
       salesFallbackRevenue: fallbackRevenue > 0 ? fallbackRevenue : null,
       adSpend: adByNm.get(nmId) ?? (hasAnyAds ? 0 : null),
       hasAds: hasAnyAds,
+      adEstimated: adEstimatedByNm.has(nmId),
       unitCost: currentUnitCost(costsByNm.get(nmId) ?? [], now),
       missedDays,
     });

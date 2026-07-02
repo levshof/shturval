@@ -57,6 +57,7 @@ interface ProductCard {
     cost: number | null;
     wbExpenses: number | null;
     adSpend: number;
+    adEstimated: boolean;
     tax: number;
     profitPerUnit: number | null;
     marginPercent: number | null;
@@ -206,11 +207,12 @@ function ChartCard({ card }: { card: ProductCard }) {
   );
 }
 
-function Mini({ label, value }: { label: string; value: string }) {
+function Mini({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="mini">
       <div className="mini__label">{label}</div>
       <div className="mini__value">{value}</div>
+      {hint && <div className="mini__hint">{hint}</div>}
     </div>
   );
 }
@@ -241,7 +243,7 @@ function EconomicsCard({ card }: { card: ProductCard }) {
       <div className="mini-grid">
         <Mini label="Себестоимость" value={formatMoney(e.cost)} />
         <Mini label="Расходы WB" value={formatMoney(e.wbExpenses)} />
-        <Mini label="Реклама" value={formatMoney(e.adSpend)} />
+        <Mini label="Реклама" value={formatMoney(e.adSpend)} hint={e.adEstimated ? 'частично оценка' : undefined} />
         <Mini label="Налог" value={formatMoney(e.tax)} />
       </div>
       <div className="mini-grid" style={{ marginTop: 8 }}>
