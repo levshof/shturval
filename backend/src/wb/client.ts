@@ -9,6 +9,7 @@ import type {
   WbCardsResponse,
   WbAdvCampaignCount,
   WbAdvFullStat,
+  WbAdvUpd,
 } from './types';
 
 const HOST = {
@@ -353,6 +354,25 @@ export class WbClient {
     }
     this.log('adv fullstats fetched', { requested: ids.length, records: out.length });
     return out;
+  }
+
+  /**
+   * adv/v1/upd — real advertising cost write-offs ("история затрат"). This is
+   * WB's billing record and, unlike adv/v3/fullstats, is not affected by the
+   * zeroed-stats bug (forum/1441, BUG-0006). One request covers the whole
+   * window; we date-filter on our side. Max 1 req/sec per account.
+   */
+  async fetchAdvUpd(from: string, to: string): Promise<WbAdvUpd[]> {
+    const resp = await this.request<WbAdvUpd[]>({
+      host: HOST.advert,
+      path: '/adv/v1/upd',
+      query: { from, to },
+      rlKey: 'adv:upd',
+      intervalMs: LENIENT_INTERVAL_MS,
+    });
+    const rows = Array.isArray(resp) ? resp : [];
+    this.log('adv upd fetched', { records: rows.length, from, to });
+    return rows;
   }
 
   private async advFullStatsChunk(

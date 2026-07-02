@@ -94,6 +94,25 @@ export interface WbCardsResponse {
   cursor?: { updatedAt?: string; nmID?: number; total?: number };
 }
 
+/**
+ * adv/v1/upd — advertising cost write-off history ("история затрат").
+ * WB's authoritative record of how much was actually charged per campaign, and
+ * unaffected by the adv/v3/fullstats zeroing bug (dev.wildberries.ru/forum/1441).
+ * Used as the source of truth for "how much was spent" (BUG-0006).
+ */
+export interface WbAdvUpd {
+  updNum?: number;
+  /** RFC3339 with +03:00 offset; can be null for not-yet-charged rows. */
+  updTime?: string | null;
+  /** Amount charged, ₽. */
+  updSum: number;
+  advertId: number;
+  campName?: string;
+  advertType?: number;
+  paymentType?: string;
+  advertStatus?: number;
+}
+
 export interface WbAdvCampaignCount {
   adverts?: Array<{
     type?: number;

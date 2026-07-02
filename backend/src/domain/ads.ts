@@ -41,6 +41,51 @@ export interface AdAllocationResult {
   unattributed: Array<{ advertId: number; spend: number }>;
 }
 
+/**
+ * Merge WB's real charged spend (from /adv/v1/upd — the billing write-off
+ * history) into per-campaign/day inputs derived from adv/v3/fullstats.
+ *
+ * WB's adv/v3/fullstats is known to return zeroed `sum`/`views`/`clicks` while
+ * still listing which products a campaign touched (dev.wildberries.ru/forum/1441,
+ * BUG-0006). The /adv/v1/upd endpoint is the reliable "how much was actually
+ * charged" source and is not affected by that bug. So we take spend from `upd`
+ * (keyed by campaign+day) as the source of truth, and keep the `nm[]` product
+ * breakdown from fullstats purely for *how it splits across products*. Downstream
+ * `allocateAdSpend` then distributes the real spend across the campaign's
+ * products (precisely where fullstats has non-zero per-nm data, otherwise
+ * proportionally/equally — see below).
+ *
+ * `realSpendByCampDay` is keyed `${advertId}|${date}` (MSK day string).
+ */
+export function mergeRealSpend(
+  fsCampDays: AdCampaignDayInput[],
+  realSpendByCampDay: Map<string, number>,
+): AdCampaignDayInput[] {
+  const keyOf = (advertId: number, date: string) => `${advertId}|${date}`;
+  const seen = new Set<string>();
+  const merged: AdCampaignDayInput[] = [];
+
+  for (const d of fsCampDays) {
+    const key = keyOf(d.advertId, d.date);
+    seen.add(key);
+    const real = realSpendByCampDay.get(key);
+    // Prefer the real charged amount; fall back to fullstats' own total when
+    // upd has nothing for this campaign/day (no silent zeroing either way).
+    merged.push({ ...d, totalSpend: real ?? d.totalSpend });
+  }
+
+  // Campaign/days that WB charged for but fullstats never reported at all:
+  // keep the spend (it's real) with no product breakdown — allocateAdSpend
+  // will report it as unattributed rather than invent an nmId.
+  for (const [key, spend] of realSpendByCampDay) {
+    if (seen.has(key)) continue;
+    const [advertIdStr, date] = key.split('|');
+    merged.push({ advertId: Number(advertIdStr), date, totalSpend: spend, nm: [] });
+  }
+
+  return merged;
+}
+
 export function allocateAdSpend(days: AdCampaignDayInput[]): AdAllocationResult {
   const byCampaign = new Map<number, AdCampaignDayInput[]>();
   for (const d of days) {

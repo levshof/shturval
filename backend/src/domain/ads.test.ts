@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allocateAdSpend, type AdCampaignDayInput } from './ads';
+import { allocateAdSpend, mergeRealSpend, type AdCampaignDayInput } from './ads';
 
 function nm(nmId: number, spend: number, extra: Partial<{ views: number; clicks: number; orders: number }> = {}) {
   return { nmId, spend, views: extra.views ?? 0, clicks: extra.clicks ?? 0, orders: extra.orders ?? 0 };
@@ -64,5 +64,44 @@ describe('allocateAdSpend', () => {
     const { rows } = allocateAdSpend(days);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ nmId: 111, spend: 110, source: 'PRECISE' });
+  });
+});
+
+describe('mergeRealSpend (BUG-0006 — real spend from /adv/v1/upd overrides zeroed fullstats)', () => {
+  it('replaces fullstats total with the real charged amount, keeping the nm breakdown', () => {
+    // The fullstats zeroing bug: nm list present, but every sum is 0.
+    const fs: AdCampaignDayInput[] = [
+      { advertId: 1, date: '2026-06-20', totalSpend: 0, nm: [nm(111, 0), nm(222, 0)] },
+    ];
+    const real = new Map<string, number>([['1|2026-06-20', 900]]);
+    const merged = mergeRealSpend(fs, real);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].totalSpend).toBe(900);
+    expect(merged[0].nm).toHaveLength(2);
+
+    // End to end: real 900 spread equally across the two listed products.
+    const { rows, unattributed } = allocateAdSpend(merged);
+    expect(unattributed).toEqual([]);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.source === 'ALLOCATED')).toBe(true);
+    expect(rows.find((r) => r.nmId === 111)!.spend).toBeCloseTo(450);
+    expect(rows.find((r) => r.nmId === 222)!.spend).toBeCloseTo(450);
+  });
+
+  it('keeps fullstats spend when upd has nothing for that campaign/day', () => {
+    const fs: AdCampaignDayInput[] = [
+      { advertId: 1, date: '2026-06-20', totalSpend: 500, nm: [nm(111, 500)] },
+    ];
+    const merged = mergeRealSpend(fs, new Map());
+    expect(merged[0].totalSpend).toBe(500);
+  });
+
+  it('adds a campaign/day that upd charged for but fullstats never reported (no invented nmId)', () => {
+    const merged = mergeRealSpend([], new Map<string, number>([['7|2026-06-21', 300]]));
+    expect(merged).toEqual([{ advertId: 7, date: '2026-06-21', totalSpend: 300, nm: [] }]);
+    // With no product info anywhere, allocateAdSpend reports it as unattributed.
+    const { rows, unattributed } = allocateAdSpend(merged);
+    expect(rows).toEqual([]);
+    expect(unattributed).toEqual([{ advertId: 7, spend: 300 }]);
   });
 });
