@@ -190,6 +190,7 @@ export function Modal({
   children,
   footer,
   wide,
+  headerActions,
 }: {
   open: boolean;
   title: ReactNode;
@@ -197,6 +198,7 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  headerActions?: ReactNode;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -213,9 +215,12 @@ export function Modal({
       <div className={`modal ${wide ? 'modal--wide' : ''}`} role="dialog" aria-modal="true">
         <div className="modal__head">
           <h3 className="modal__title">{title}</h3>
-          <button className="icon-btn" aria-label="Закрыть" onClick={onClose}>
-            <Icon name="x" size={18} />
-          </button>
+          <div className="row" style={{ gap: 8 }}>
+            {headerActions}
+            <button className="icon-btn" aria-label="Закрыть" onClick={onClose}>
+              <Icon name="x" size={18} />
+            </button>
+          </div>
         </div>
         <div className="modal__body">{children}</div>
         {footer && <div className="modal__foot">{footer}</div>}

@@ -27,6 +27,7 @@ import {
   NumberInput,
   StatusBadge,
 } from '../components/ui';
+import { Icon } from '../components/ui/icons';
 import { useToast } from '../components/ui/toast';
 
 interface ProductCard {
@@ -79,8 +80,18 @@ interface ProductCard {
   chartProjectedFrom: string;
 }
 
+function buildInsight(card: ProductCard): string {
+  const { daysOfStock, avgDailySales } = card.kpis;
+  const coverage = daysOfStock != null ? `покрытие ${formatDays(daysOfStock)}` : null;
+  const detail = [coverage, `продажи ${formatNum(avgDailySales, 1)} шт/день`].filter(Boolean).join(', ');
+  return `${card.info.recommendation} (${detail})`;
+}
+
+type Panel = 'supply' | 'params' | null;
+
 export function ProductCardModal({ nmId, onClose }: { nmId: number; onClose: () => void }) {
   const qc = useQueryClient();
+  const [panel, setPanel] = useState<Panel>(null);
   const { data, isLoading } = useQuery({ queryKey: ['product', nmId], queryFn: () => api.get<ProductCard>(`/api/products/${nmId}`) });
 
   const invalidateAll = () => {
@@ -90,62 +101,62 @@ export function ProductCardModal({ nmId, onClose }: { nmId: number; onClose: () 
     void qc.invalidateQueries({ queryKey: ['transit'] });
   };
 
+  const togglePanel = (p: Exclude<Panel, null>) => setPanel((cur) => (cur === p ? null : p));
+
   return (
-    <Modal open title={data ? `${data.info.supplierArticle}` : 'Товар'} onClose={onClose} wide>
+    <Modal
+      open
+      title={data ? '' : 'Товар'}
+      onClose={onClose}
+      wide
+      headerActions={
+        data && (
+          <>
+            <Button variant={panel === 'supply' ? 'primary' : 'secondary'} size="sm" onClick={() => togglePanel('supply')}>
+              <Icon name="truck" size={16} /> Поставка
+            </Button>
+            <Button variant={panel === 'params' ? 'primary' : 'secondary'} size="sm" onClick={() => togglePanel('params')}>
+              <Icon name="settings" size={16} /> Параметры
+            </Button>
+          </>
+        )
+      }
+    >
       {isLoading || !data ? (
         <LoadingBlock rows={6} />
       ) : (
         <div className="stack">
-          <div className="row between" style={{ alignItems: 'flex-start' }}>
-            <div>
-              <div className="row" style={{ gap: 8 }}>
-                <StatusBadge view={healthView(data.kpis.health)} />
-                {data.info.category && <span className="muted">{data.info.category}</span>}
-              </div>
-              <div className="muted-3" style={{ fontSize: 12, marginTop: 4 }}>
-                nmID {data.info.nmId}
-                {data.info.brand ? ` · ${data.info.brand}` : ''}
-              </div>
+          <div>
+            <div className="row" style={{ gap: 8 }}>
+              <h2 style={{ fontSize: 'var(--fs-h1)', fontWeight: 700 }}>{data.info.supplierArticle}</h2>
+              <StatusBadge view={healthView(data.kpis.health)} />
             </div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+              {data.info.title ?? 'Без названия'} · NM {data.info.nmId}
+              {data.info.brand ? ` · ${data.info.brand}` : ''}
+              {data.info.category ? ` · ${data.info.category}` : ''}
+            </div>
+            <div className="muted-3" style={{ fontSize: 13, marginTop: 8 }}>{buildInsight(data)}</div>
           </div>
-
-          <Banner variant={data.kpis.health === 'NORMAL' || data.kpis.health === 'OVERSTOCK' ? 'info' : 'warning'}>
-            {data.info.recommendation}
-          </Banner>
 
           <div className="grid grid-4">
-            <Metric label="Текущий остаток" value={<span className="num">{formatNum(data.kpis.currentStock)}</span>} small />
-            <Metric label="В пути" value={<span className="num">{formatNum(data.kpis.inTransitQty)}</span>} small />
-            <Metric label="Продажи в день" value={<span className="num">{formatNum(data.kpis.avgDailySales, 1)}</span>} small />
+            <Metric label="Сейчас на складе" value={<span className="num">{formatNum(data.kpis.currentStock)}</span>} small />
+            <Metric label="Активная поставка" value={<span className="num">{formatNum(data.kpis.inTransitQty)}</span>} small />
             <Metric
-              label="Дата дефицита"
+              label="Дефицит"
               value={<span className="num">{data.kpis.deficitDate ? formatDate(data.kpis.deficitDate) : '—'}</span>}
-              sub={data.kpis.daysOfStock != null ? `запас ${formatDays(data.kpis.daysOfStock)}` : undefined}
               small
             />
+            <Metric label="Продажи в день" value={<span className="num">{formatNum(data.kpis.avgDailySales, 1)}</span>} small />
           </div>
 
-          <ChartCard card={data} />
-          <EconomicsCard card={data} />
-
-          <div className="grid grid-2">
-            <SupplyActionCard nmId={nmId} card={data} onDone={invalidateAll} />
-            <ParamsActionCard nmId={nmId} card={data} onDone={invalidateAll} />
-          </div>
-
-          {data.supplies.length > 0 && (
-            <Card title="Поставки по товару" pad="sm">
-              <div className="stack" style={{ gap: 8 }}>
-                {data.supplies.map((s) => (
-                  <div key={s.id} className="row between">
-                    <span className="num">
-                      {s.acceptedQty} / {s.quantity} шт · к {formatDateFull(s.expectedDate)}
-                    </span>
-                    <StatusBadge view={supplyStatusView(s.status)} />
-                  </div>
-                ))}
-              </div>
-            </Card>
+          {panel === 'supply' && <SupplyPanel nmId={nmId} card={data} onDone={invalidateAll} />}
+          {panel === 'params' && <ParamsPanel nmId={nmId} card={data} onDone={invalidateAll} />}
+          {panel === null && (
+            <div className="grid grid-2">
+              <ChartCard card={data} />
+              <EconomicsCard card={data} />
+            </div>
           )}
         </div>
       )}
@@ -161,19 +172,21 @@ function ChartCard({ card }: { card: ProductCard }) {
 
   return (
     <Card
-      title="График за 30 дней"
+      title="Продажи по дням"
       actions={
         <div className="tabs">
           <button className={`tab ${mode === 'sales' ? 'active' : ''}`} onClick={() => setMode('sales')}>
+            <span className="tab__dot" style={{ background: mode === 'sales' ? '#fff' : 'var(--info)' }} />
             Продажи
           </button>
           <button className={`tab ${mode === 'finance' ? 'active' : ''}`} onClick={() => setMode('finance')}>
+            <span className="tab__dot" style={{ background: mode === 'finance' ? '#fff' : 'var(--brand)' }} />
             Выручка + прибыль
           </button>
         </div>
       }
     >
-      <div style={{ width: '100%', height: 240 }}>
+      <div style={{ width: '100%', height: 220 }}>
         <ResponsiveContainer>
           {mode === 'sales' ? (
             <BarChart data={card.chart} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
@@ -219,20 +232,24 @@ function Mini({ label, value, hint }: { label: string; value: string; hint?: str
 
 function EconomicsCard({ card }: { card: ProductCard }) {
   const e = card.economics;
+  const missing = [
+    !e.flags.hasCost && 'себестоимость',
+    !e.flags.hasFinanceReport && 'финотчёт WB',
+    !e.flags.hasAds && 'реклама',
+  ].filter(Boolean) as string[];
+  const netFromWb = e.wbExpenses != null ? e.revenue - e.wbExpenses : null;
+
   return (
-    <Card
-      title="Экономика за 30 дней"
-      actions={<StatusBadge view={dataQualityView(e.dataQuality)} dot={false} />}
-    >
-      {(!e.flags.hasCost || !e.flags.hasFinanceReport || !e.flags.hasAds) && (
-        <div className="stack" style={{ gap: 8, marginBottom: 16 }}>
-          {!e.flags.hasCost && <Banner variant="warning" title="Не заполнена себестоимость">Прибыль не может быть рассчитана корректно.</Banner>}
-          {!e.flags.hasFinanceReport && <Banner variant="warning">Нет финансового отчёта WB за период — выручка оценочная.</Banner>}
-          {!e.flags.hasAds && <Banner variant="info">Нет данных по рекламе.</Banner>}
-        </div>
+    <Card title="Проверенная экономика" actions={<StatusBadge view={dataQualityView(e.dataQuality)} dot={false} />}>
+      {missing.length > 0 && (
+        <Banner variant="warning">Нет данных: {missing.join(', ')} — цифры приблизительные.</Banner>
       )}
-      <div className="grid grid-2" style={{ marginBottom: 16 }}>
-        <Metric label="Выручка" value={<span className="num">{formatMoney(e.revenue)}</span>} />
+      <div className="grid grid-2" style={{ margin: missing.length > 0 ? '12px 0 16px' : '0 0 16px' }}>
+        <Metric
+          label="Выручка"
+          value={<span className="num">{formatMoney(e.revenue)}</span>}
+          sub={netFromWb != null ? `Поступит от WB: ${formatMoney(netFromWb)}` : undefined}
+        />
         <Metric
           label="Прибыль"
           value={<span className="num">{formatMoney(e.profit)}</span>}
@@ -240,23 +257,21 @@ function EconomicsCard({ card }: { card: ProductCard }) {
           trend={e.profit != null ? (e.profit >= 0 ? 'up' : 'down') : undefined}
         />
       </div>
+      <div className="grid grid-2" style={{ marginBottom: 16 }}>
+        <Metric label="Продано" value={<span className="num">{formatUnits(e.units)}</span>} small />
+        <Metric label="Средняя цена" value={<span className="num">{formatMoney(e.avgPrice)}</span>} small />
+      </div>
       <div className="mini-grid">
         <Mini label="Себестоимость" value={formatMoney(e.cost)} />
         <Mini label="Расходы WB" value={formatMoney(e.wbExpenses)} />
         <Mini label="Реклама" value={formatMoney(e.adSpend)} hint={e.adEstimated ? 'частично оценка' : undefined} />
         <Mini label="Налог" value={formatMoney(e.tax)} />
       </div>
-      <div className="mini-grid" style={{ marginTop: 8 }}>
-        <Mini label="Продано" value={formatUnits(e.units)} />
-        <Mini label="Средняя цена" value={formatMoney(e.avgPrice)} />
-        <Mini label="Прибыль/шт" value={formatMoney(e.profitPerUnit)} />
-        <Mini label="Доля расходов" value={formatPercent(e.expensesSharePercent)} />
-      </div>
     </Card>
   );
 }
 
-function SupplyActionCard({ nmId, card, onDone }: { nmId: number; card: ProductCard; onDone: () => void }) {
+function SupplyPanel({ nmId, card, onDone }: { nmId: number; card: ProductCard; onDone: () => void }) {
   const toast = useToast();
   const [qty, setQty] = useState(card.recommendedQty || card.settings.orderQuantum);
   const [days, setDays] = useState(card.settings.leadTimeDays);
@@ -270,27 +285,50 @@ function SupplyActionCard({ nmId, card, onDone }: { nmId: number; card: ProductC
   });
   return (
     <Card title="Поставка" pad="sm">
-      <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-        Рекомендуем заказать: <strong className="num">{formatNum(card.recommendedQty)} шт</strong>
-      </div>
       <div className="grid grid-2">
-        <Field label="Количество, шт">
-          <NumberInput value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-        </Field>
-        <Field label="Придёт через, дней">
-          <NumberInput value={days} onChange={(e) => setDays(Number(e.target.value))} />
-        </Field>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Button variant="primary" block onClick={() => create.mutate()} loading={create.isPending} disabled={qty <= 0}>
-          Создать поставку
-        </Button>
+        <div className="stack" style={{ gap: 12 }}>
+          <div className="muted" style={{ fontSize: 13 }}>
+            Рекомендуем заказать: <strong className="num">{formatNum(card.recommendedQty)} шт</strong>
+          </div>
+          <div className="grid grid-2">
+            <Field label="Количество, шт">
+              <NumberInput value={qty} onChange={(e) => setQty(Number(e.target.value))} />
+            </Field>
+            <Field label="Придёт через, дней">
+              <NumberInput value={days} onChange={(e) => setDays(Number(e.target.value))} />
+            </Field>
+          </div>
+          <Button variant="primary" block onClick={() => create.mutate()} loading={create.isPending} disabled={qty <= 0}>
+            Создать поставку
+          </Button>
+        </div>
+        <div>
+          <div className="metric__label" style={{ marginBottom: 8 }}>
+            Текущие поставки
+          </div>
+          {card.supplies.length === 0 ? (
+            <div className="muted-3" style={{ fontSize: 13 }}>
+              Нет активных поставок.
+            </div>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {card.supplies.map((s) => (
+                <div key={s.id} className="row between">
+                  <span className="num" style={{ fontSize: 13 }}>
+                    {s.acceptedQty} / {s.quantity} шт · к {formatDateFull(s.expectedDate)}
+                  </span>
+                  <StatusBadge view={supplyStatusView(s.status)} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </Card>
   );
 }
 
-function ParamsActionCard({ nmId, card, onDone }: { nmId: number; card: ProductCard; onDone: () => void }) {
+function ParamsPanel({ nmId, card, onDone }: { nmId: number; card: ProductCard; onDone: () => void }) {
   const toast = useToast();
   const [form, setForm] = useState({
     unitCost: card.cost?.unitCost ?? 0,
@@ -322,7 +360,7 @@ function ParamsActionCard({ nmId, card, onDone }: { nmId: number; card: ProductC
 
   return (
     <Card title="Параметры" pad="sm">
-      <div className="grid grid-2">
+      <div className="grid grid-3">
         <Field label="Себестоимость, ₽/шт">
           <NumberInput value={form.unitCost} onChange={set('unitCost')} />
         </Field>
@@ -342,16 +380,12 @@ function ParamsActionCard({ nmId, card, onDone }: { nmId: number; card: ProductC
           <NumberInput value={form.targetStockDays} onChange={set('targetStockDays')} />
         </Field>
       </div>
-      <div style={{ marginTop: 12 }}>
-        <Button variant="primary" block onClick={() => save.mutate()} loading={save.isPending}>
+      <div className="row between" style={{ marginTop: 12 }}>
+        {card.cost == null ? <Badge variant="warning">Себестоимость не заполнена</Badge> : <span />}
+        <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending}>
           Сохранить параметры
         </Button>
       </div>
-      {card.cost == null && (
-        <div style={{ marginTop: 8 }}>
-          <Badge variant="warning">Себестоимость не заполнена</Badge>
-        </div>
-      )}
     </Card>
   );
 }
